@@ -1,1 +1,518 @@
+<!DOCTYPE html>
 
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YT Transcribe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+–bg: #0a0a0a;
+–surface: #111;
+–border: #222;
+–accent: #c8ff00;
+–accent-dim: rgba(200,255,0,0.08);
+–text: #e8e8e0;
+–muted: #555;
+–mono: ‘Azeret Mono’, monospace;
+–serif: ‘Instrument Serif’, serif;
+}
+
+html, body {
+background: var(–bg);
+color: var(–text);
+font-family: var(–mono);
+min-height: 100vh;
+}
+
+body {
+display: flex;
+flex-direction: column;
+align-items: center;
+padding: 3rem 1.5rem 6rem;
+}
+
+header {
+width: 100%;
+max-width: 780px;
+margin-bottom: 3.5rem;
+display: flex;
+align-items: baseline;
+gap: 1rem;
+}
+
+.logo-text {
+font-family: var(–serif);
+font-style: italic;
+font-size: 2.4rem;
+letter-spacing: -0.02em;
+color: var(–text);
+line-height: 1;
+}
+
+.logo-badge {
+font-family: var(–mono);
+font-size: 0.65rem;
+font-weight: 500;
+background: var(–accent);
+color: #000;
+padding: 2px 7px;
+letter-spacing: 0.12em;
+text-transform: uppercase;
+border-radius: 2px;
+position: relative;
+top: -4px;
+}
+
+.input-section {
+width: 100%;
+max-width: 780px;
+margin-bottom: 2rem;
+}
+
+.label {
+font-size: 0.65rem;
+font-weight: 500;
+letter-spacing: 0.18em;
+text-transform: uppercase;
+color: var(–muted);
+margin-bottom: 0.6rem;
+display: block;
+}
+
+.url-row {
+display: flex;
+gap: 0;
+border: 1px solid var(–border);
+background: var(–surface);
+border-radius: 4px;
+overflow: hidden;
+transition: border-color 0.2s;
+}
+
+.url-row:focus-within {
+border-color: var(–accent);
+}
+
+input[type=“text”] {
+flex: 1;
+background: transparent;
+border: none;
+outline: none;
+padding: 0.85rem 1rem;
+font-family: var(–mono);
+font-size: 0.85rem;
+color: var(–text);
+min-width: 0;
+}
+
+input::placeholder { color: var(–muted); }
+
+button#transcribe-btn {
+background: var(–accent);
+color: #000;
+border: none;
+cursor: pointer;
+padding: 0.85rem 1.5rem;
+font-family: var(–mono);
+font-size: 0.75rem;
+font-weight: 700;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+white-space: nowrap;
+transition: opacity 0.15s;
+}
+
+button#transcribe-btn:hover { opacity: 0.85; }
+button#transcribe-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.options-row {
+display: flex;
+gap: 1.5rem;
+margin-top: 0.8rem;
+flex-wrap: wrap;
+}
+
+.option-btn {
+background: none;
+border: 1px solid var(–border);
+color: var(–muted);
+padding: 0.3rem 0.75rem;
+font-family: var(–mono);
+font-size: 0.65rem;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+cursor: pointer;
+border-radius: 2px;
+transition: all 0.15s;
+}
+
+.option-btn.active {
+border-color: var(–accent);
+color: var(–accent);
+background: var(–accent-dim);
+}
+
+.option-btn:hover {
+border-color: #444;
+color: var(–text);
+}
+
+/* Status */
+.status-bar {
+width: 100%;
+max-width: 780px;
+margin-bottom: 1.5rem;
+min-height: 1.5rem;
+}
+
+.status-bar .status-text {
+font-size: 0.7rem;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+}
+
+.status-bar .status-text.loading { color: var(–accent); }
+.status-bar .status-text.error { color: #ff5555; }
+.status-bar .status-text.success { color: var(–accent); }
+
+.spinner {
+display: inline-block;
+width: 8px;
+height: 8px;
+border: 1.5px solid var(–accent);
+border-top-color: transparent;
+border-radius: 50%;
+animation: spin 0.7s linear infinite;
+margin-right: 8px;
+vertical-align: middle;
+position: relative;
+top: -1px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Transcript Output */
+.transcript-container {
+width: 100%;
+max-width: 780px;
+display: none;
+flex-direction: column;
+gap: 0;
+animation: fadeIn 0.4s ease;
+}
+
+.transcript-container.visible { display: flex; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.transcript-header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 0.7rem 1rem;
+background: var(–surface);
+border: 1px solid var(–border);
+border-bottom: none;
+border-radius: 4px 4px 0 0;
+}
+
+.video-title {
+font-family: var(–serif);
+font-style: italic;
+font-size: 1rem;
+color: var(–text);
+flex: 1;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+margin-right: 1rem;
+}
+
+.copy-btn {
+background: none;
+border: 1px solid var(–border);
+color: var(–muted);
+padding: 0.3rem 0.8rem;
+font-family: var(–mono);
+font-size: 0.62rem;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+cursor: pointer;
+border-radius: 2px;
+white-space: nowrap;
+transition: all 0.15s;
+flex-shrink: 0;
+}
+
+.copy-btn:hover {
+border-color: var(–accent);
+color: var(–accent);
+}
+
+.transcript-body {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 0 0 4px 4px;
+padding: 1.5rem;
+max-height: 60vh;
+overflow-y: auto;
+scrollbar-width: thin;
+scrollbar-color: var(–border) transparent;
+}
+
+/* Paragraph view */
+.transcript-body.paragraph-view .segment { display: inline; }
+.transcript-body.paragraph-view .segment::after { content: ’ ’; }
+.transcript-body.paragraph-view .timestamp { display: none; }
+.paragraph-view .transcript-para {
+margin-bottom: 1.2rem;
+line-height: 1.8;
+font-size: 0.9rem;
+font-family: var(–serif);
+font-style: normal;
+color: var(–text);
+}
+
+/* Timestamp view */
+.timestamp-view .segment {
+display: flex;
+gap: 1rem;
+align-items: baseline;
+padding: 0.35rem 0;
+border-bottom: 1px solid #1a1a1a;
+}
+
+.timestamp-view .segment:last-child { border-bottom: none; }
+
+.timestamp-view .timestamp {
+font-size: 0.65rem;
+color: var(–accent);
+min-width: 54px;
+flex-shrink: 0;
+letter-spacing: 0.05em;
+}
+
+.timestamp-view .seg-text {
+font-size: 0.85rem;
+line-height: 1.6;
+color: var(–text);
+}
+
+.word-count {
+font-size: 0.62rem;
+color: var(–muted);
+letter-spacing: 0.08em;
+text-transform: uppercase;
+margin-top: 0.8rem;
+text-align: right;
+}
+
+.divider { width: 100%; max-width: 780px; border: none; border-top: 1px solid var(–border); margin: 2rem 0; }
+
+.hint { font-size: 0.65rem; color: var(–muted); letter-spacing: 0.05em; line-height: 1.7; max-width: 780px; width: 100%; }
+.hint a { color: #555; }
+</style>
+
+</head>
+<body>
+
+<header>
+  <span class="logo-text">Transcribe</span>
+  <span class="logo-badge">YT</span>
+</header>
+
+<div class="input-section">
+  <span class="label">YouTube URL</span>
+  <div class="url-row">
+    <input type="text" id="url-input" placeholder="https://youtube.com/watch?v=..." />
+    <button id="transcribe-btn" onclick="startTranscribe()">Transcribe →</button>
+  </div>
+  <div class="options-row">
+    <span class="label" style="margin:0; display:flex; align-items:center;">View:</span>
+    <button class="option-btn active" id="btn-paragraph" onclick="setView('paragraph')">Paragraph</button>
+    <button class="option-btn" id="btn-timestamp" onclick="setView('timestamp')">Timestamps</button>
+  </div>
+</div>
+
+<div class="status-bar">
+  <span id="status" class="status-text"></span>
+</div>
+
+<div class="transcript-container" id="transcript-container">
+  <div class="transcript-header">
+    <span class="video-title" id="video-title">—</span>
+    <button class="copy-btn" onclick="copyTranscript()">Copy text</button>
+  </div>
+  <div class="transcript-body paragraph-view" id="transcript-body"></div>
+  <div class="word-count" id="word-count"></div>
+</div>
+
+<hr class="divider">
+<p class="hint">Fetches auto-generated captions from YouTube. Works best with videos that have auto-captions or manual subtitles enabled. Paste any YouTube link above and click Transcribe.</p>
+
+<script>
+  let currentView = 'paragraph';
+  let segmentsData = [];
+
+  function setView(v) {
+    currentView = v;
+    document.getElementById('btn-paragraph').classList.toggle('active', v === 'paragraph');
+    document.getElementById('btn-timestamp').classList.toggle('active', v === 'timestamp');
+    if (segmentsData.length) renderTranscript(segmentsData);
+  }
+
+  function extractVideoId(url) {
+    const patterns = [
+      /[?&]v=([^&#]+)/,
+      /youtu\.be\/([^?&#]+)/,
+      /\/embed\/([^?&#]+)/,
+      /\/shorts\/([^?&#]+)/,
+    ];
+    for (const p of patterns) {
+      const m = url.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  function setStatus(msg, type) {
+    const el = document.getElementById('status');
+    el.className = 'status-text ' + (type || '');
+    el.innerHTML = type === 'loading' ? '<span class="spinner"></span>' + msg : msg;
+  }
+
+  function formatTime(secs) {
+    secs = Math.floor(Number(secs));
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  async function startTranscribe() {
+    const url = document.getElementById('url-input').value.trim();
+    if (!url) { setStatus('Please paste a YouTube URL first.', 'error'); return; }
+
+    const vid = extractVideoId(url);
+    if (!vid) { setStatus('Could not extract video ID from URL.', 'error'); return; }
+
+    document.getElementById('transcribe-btn').disabled = true;
+    document.getElementById('transcript-container').classList.remove('visible');
+    segmentsData = [];
+
+    try {
+      setStatus('Fetching video page…', 'loading');
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${vid}`)}`;
+      const resp = await fetch(proxyUrl);
+      if (!resp.ok) throw new Error('Failed to fetch video page.');
+      const data = await resp.json();
+      const html = data.contents;
+
+      // Extract player response
+      const match = html.match(/ytInitialPlayerResponse\s*=\s*({.+?})\s*;/s);
+      if (!match) throw new Error('Could not parse video data. The video may be age-restricted or unavailable.');
+
+      const playerData = JSON.parse(match[1]);
+
+      // Video title
+      const title = playerData?.videoDetails?.title || 'Untitled Video';
+      document.getElementById('video-title').textContent = title;
+
+      // Find caption tracks
+      const captions = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+      if (!captions || captions.length === 0) {
+        throw new Error('No captions/subtitles found for this video. Try a video with auto-generated captions enabled.');
+      }
+
+      // Prefer English, or first available
+      const track = captions.find(t => t.languageCode === 'en' || t.languageCode?.startsWith('en')) || captions[0];
+      const captionUrl = track.baseUrl;
+      const lang = track.name?.simpleText || track.languageCode;
+
+      setStatus(`Fetching ${lang} captions…`, 'loading');
+
+      const captionProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(captionUrl)}`;
+      const cResp = await fetch(captionProxy);
+      if (!cResp.ok) throw new Error('Failed to fetch captions.');
+      const cData = await cResp.json();
+
+      const xml = cData.contents;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xml, 'text/xml');
+      const texts = doc.querySelectorAll('text');
+
+      if (!texts.length) throw new Error('No caption text found.');
+
+      segmentsData = Array.from(texts).map(t => ({
+        start: parseFloat(t.getAttribute('start') || '0'),
+        dur: parseFloat(t.getAttribute('dur') || '0'),
+        text: decodeHtmlEntities(t.textContent),
+      }));
+
+      renderTranscript(segmentsData);
+      setStatus(`✓ Transcribed — ${lang} · ${segmentsData.length} segments`, 'success');
+
+    } catch (e) {
+      setStatus(e.message, 'error');
+    } finally {
+      document.getElementById('transcribe-btn').disabled = false;
+    }
+  }
+
+  function decodeHtmlEntities(str) {
+    const txt = document.createElement('textarea');
+    txt.innerHTML = str;
+    return txt.value;
+  }
+
+  function renderTranscript(segs) {
+    const body = document.getElementById('transcript-body');
+    body.innerHTML = '';
+    const wordCount = segs.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
+    document.getElementById('word-count').textContent = `${wordCount.toLocaleString()} words`;
+
+    if (currentView === 'paragraph') {
+      body.className = 'transcript-body paragraph-view';
+      // Group every ~15 segments into paragraphs
+      const chunkSize = 15;
+      for (let i = 0; i < segs.length; i += chunkSize) {
+        const chunk = segs.slice(i, i + chunkSize);
+        const p = document.createElement('p');
+        p.className = 'transcript-para';
+        p.textContent = chunk.map(s => s.text).join(' ');
+        body.appendChild(p);
+      }
+    } else {
+      body.className = 'transcript-body timestamp-view';
+      segs.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'segment';
+        div.innerHTML = `<span class="timestamp">${formatTime(s.start)}</span><span class="seg-text">${s.text}</span>`;
+        body.appendChild(div);
+      });
+    }
+
+    document.getElementById('transcript-container').classList.add('visible');
+  }
+
+  function copyTranscript() {
+    const text = segmentsData.map(s => s.text).join(' ');
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy text', 1800);
+    });
+  }
+
+  // Allow Enter key
+  document.getElementById('url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') startTranscribe();
+  });
+</script>
+
+</body>
+</html>
