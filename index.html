@@ -367,6 +367,8 @@ text-align: right;
   }
 
   function extractVideoId(url) {
+    // Normalize mobile URLs
+    url = url.replace('m.youtube.com', 'www.youtube.com');
     const patterns = [
       /[?&]v=([^&#]+)/,
       /youtu\.be\/([^?&#]+)/,
@@ -405,56 +407,100 @@ text-align: right;
     segmentsData = [];
 
     try {
-      setStatus('Fetching video page…', 'loading');
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${vid}`)}`;
-      const resp = await fetch(proxyUrl);
-      if (!resp.ok) throw new Error('Failed to fetch video page.');
-      const data = await resp.json();
-      const html = data.contents;
+      // Fetch video title via oEmbed (lightweight, no CORS issues via proxy)
+      try {
+        const oembedProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${vid}&format=json`)}`;
+        const or = await fetch(oembedProxy);
+        if (or.ok) {
+          const od = await or.json();
+          const oj = JSON.parse(od.contents);
+          if (oj.title) document.getElementById('video-title').textContent = oj.title;
+        }
+      } catch(_) {}
 
-      // Extract player response
-      const match = html.match(/ytInitialPlayerResponse\s*=\s*({.+?})\s*;/s);
-      if (!match) throw new Error('Could not parse video data. The video may be age-restricted or unavailable.');
+      // Step 1: Try direct timedtext API (works for many videos without page parsing)
+      setStatus('Fetching captions…', 'loading');
 
-      const playerData = JSON.parse(match[1]);
+      let segs = null;
+      let langLabel = 'English';
 
-      // Video title
-      const title = playerData?.videoDetails?.title || 'Untitled Video';
-      document.getElementById('video-title').textContent = title;
+      // Try both manual (en) and auto-generated (en + asr) captions
+      const timedtextUrls = [
+        `https://www.youtube.com/api/timedtext?v=${vid}&lang=en`,
+        `https://www.youtube.com/api/timedtext?v=${vid}&lang=en&kind=asr`,
+        `https://www.youtube.com/api/timedtext?v=${vid}&lang=en-US`,
+        `https://www.youtube.com/api/timedtext?v=${vid}&lang=en-GB`,
+      ];
 
-      // Find caption tracks
-      const captions = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-      if (!captions || captions.length === 0) {
-        throw new Error('No captions/subtitles found for this video. Try a video with auto-generated captions enabled.');
+      for (const ttUrl of timedtextUrls) {
+        try {
+          const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(ttUrl)}`;
+          const r = await fetch(proxy);
+          if (!r.ok) continue;
+          const d = await r.json();
+          const xml = d.contents;
+          if (!xml || xml.trim() === '' || xml.trim() === '<?xml version="1.0" encoding="utf-8" ?><transcript></transcript>') continue;
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(xml, 'text/xml');
+          const texts = doc.querySelectorAll('text');
+          if (texts.length > 0) {
+            segs = Array.from(texts).map(t => ({
+              start: parseFloat(t.getAttribute('start') || '0'),
+              dur: parseFloat(t.getAttribute('dur') || '0'),
+              text: decodeHtmlEntities(t.textContent),
+            }));
+            break;
+          }
+        } catch(_) {}
       }
 
-      // Prefer English, or first available
-      const track = captions.find(t => t.languageCode === 'en' || t.languageCode?.startsWith('en')) || captions[0];
-      const captionUrl = track.baseUrl;
-      const lang = track.name?.simpleText || track.languageCode;
+      // Step 2: Fall back to scraping the video page if timedtext didn't work
+      if (!segs) {
+        setStatus('Fetching video page…', 'loading');
+        const pageUrl = `https://www.youtube.com/watch?v=${vid}`;
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
+        const resp = await fetch(proxyUrl);
+        if (!resp.ok) throw new Error('Failed to fetch video page.');
+        const data = await resp.json();
+        const html = data.contents;
 
-      setStatus(`Fetching ${lang} captions…`, 'loading');
+        const match = html.match(/ytInitialPlayerResponse\s*=\s*({.+?})\s*;/s);
+        if (!match) throw new Error('Could not parse video data. The video may be age-restricted or unavailable.');
 
-      const captionProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(captionUrl)}`;
-      const cResp = await fetch(captionProxy);
-      if (!cResp.ok) throw new Error('Failed to fetch captions.');
-      const cData = await cResp.json();
+        const playerData = JSON.parse(match[1]);
+        const title = playerData?.videoDetails?.title;
+        if (title) document.getElementById('video-title').textContent = title;
 
-      const xml = cData.contents;
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(xml, 'text/xml');
-      const texts = doc.querySelectorAll('text');
+        const captions = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+        if (!captions || captions.length === 0) {
+          throw new Error('No captions found for this video. It may not have subtitles enabled.');
+        }
 
-      if (!texts.length) throw new Error('No caption text found.');
+        const track = captions.find(t => t.languageCode === 'en' || t.languageCode?.startsWith('en')) || captions[0];
+        langLabel = track.name?.simpleText || track.languageCode;
 
-      segmentsData = Array.from(texts).map(t => ({
-        start: parseFloat(t.getAttribute('start') || '0'),
-        dur: parseFloat(t.getAttribute('dur') || '0'),
-        text: decodeHtmlEntities(t.textContent),
-      }));
+        setStatus(`Fetching ${langLabel} captions…`, 'loading');
 
+        const captionProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(track.baseUrl)}`;
+        const cResp = await fetch(captionProxy);
+        if (!cResp.ok) throw new Error('Failed to fetch captions.');
+        const cData = await cResp.json();
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(cData.contents, 'text/xml');
+        const texts = doc.querySelectorAll('text');
+        if (!texts.length) throw new Error('Caption data was empty.');
+
+        segs = Array.from(texts).map(t => ({
+          start: parseFloat(t.getAttribute('start') || '0'),
+          dur: parseFloat(t.getAttribute('dur') || '0'),
+          text: decodeHtmlEntities(t.textContent),
+        }));
+      }
+
+      segmentsData = segs;
       renderTranscript(segmentsData);
-      setStatus(`✓ Transcribed — ${lang} · ${segmentsData.length} segments`, 'success');
+      setStatus(`✓ Transcribed — ${langLabel} · ${segmentsData.length} segments`, 'success');
 
     } catch (e) {
       setStatus(e.message, 'error');
